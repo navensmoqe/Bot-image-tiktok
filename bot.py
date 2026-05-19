@@ -3,7 +3,6 @@ import json
 import requests
 import textwrap
 import logging
-import urllib.request
 from io import BytesIO
 from urllib.parse import quote
 from telegram import Update, InputMediaPhoto
@@ -26,16 +25,22 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 PORT = int(os.environ.get("PORT", "8443"))
 RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bot-image-tiktok.onrender.com")
 
-# --- تحميل الخط العربي تلقائياً (الحل السحري) ---
-FONT_PATH = "cairo_arabic.ttf"
+# --- تحميل الخط العربي (رابط ثابت ومضمون) ---
+FONT_PATH = "tajawal_bold.ttf"
 if not os.path.exists(FONT_PATH):
-    logger.info("جاري تحميل خط Cairo العربي...")
+    logger.info("جاري تحميل خط Tajawal العربي...")
     try:
-        font_url = "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Bold.ttf"
-        urllib.request.urlretrieve(font_url, FONT_PATH)
-        logger.info("تم تحميل الخط بنجاح.")
+        # رابط مباشر لخط تجوال العريض من سيرفرات جوجل المفتوحة
+        font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/tajawal/Tajawal-Bold.ttf"
+        response = requests.get(font_url)
+        if response.status_code == 200:
+            with open(FONT_PATH, 'wb') as f:
+                f.write(response.content)
+            logger.info("تم تحميل الخط بنجاح.")
+        else:
+            logger.error(f"فشل تحميل الخط، كود الخطأ: {response.status_code}")
     except Exception as e:
-        logger.error(f"فشل تحميل الخط: {e}")
+        logger.error(f"حدث خطأ أثناء تحميل الخط: {e}")
 
 # --- إعداد عميل Groq ---
 if GROQ_API_KEY:
@@ -84,6 +89,7 @@ def create_image_with_text(image_bytes, arabic_text):
     try:
         font = ImageFont.truetype(FONT_PATH, 60)
     except IOError:
+        logger.warning("الخط غير موجود، سيتم استخدام الخط الافتراضي.")
         font = ImageFont.load_default()
 
     # تقسيم وتوسيط النص
@@ -91,7 +97,7 @@ def create_image_with_text(image_bytes, arabic_text):
     y_text = (img.height - (len(lines) * 80)) / 2
     
     for line in lines:
-        # معالجة وتقويم الحروف العربية
+        # معالجة وتقويم الحروف العربية لشبكها
         reshaped = arabic_reshaper.reshape(line)
         bidi = get_display(reshaped)
         
