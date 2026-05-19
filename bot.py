@@ -14,7 +14,7 @@ from bidi.algorithm import get_display
 # --- إعدادات البيئة ---
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL") # رابط التطبيق الذي يوفره Render تلقائياً
+RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL")
 PORT = int(os.environ.get("PORT", "8443"))
 
 # --- إعداد جيميناي ---
@@ -41,32 +41,89 @@ PROMPT_TEMPLATE = """
 
 def clean_json(text):
     text = text.strip()
-    if text.startswith("
-http://googleusercontent.com/immersive_entry_chip/0
-http://googleusercontent.com/immersive_entry_chip/1
-http://googleusercontent.com/immersive_entry_chip/2
+    if text.startswith("```json"): 
+        text = text[7:]
+    if text.startswith("```"): 
+        text = text[3:]
+    if text.endswith("```"): 
+        text = text[:-3]
+    return text.strip()
 
----
+def create_image_with_text(image_bytes, arabic_text):
+    img = Image.open(BytesIO(image_bytes)).convert("RGBA")
+    
+    # طبقة تظليل سوداء شفافة لتوضيح النص
+    overlay = Image.new('RGBA', img.size, (0, 0, 0, 140))
+    img = Image.alpha_composite(img, overlay)
+    draw = ImageDraw.Draw(img)
+    
+    # تحميل الخط العربي
+    try:
+        font = ImageFont.truetype("font.ttf", 60)
+    except IOError:
+        font = ImageFont.load_default()
 
-### 2. خطوات الرفع على منصة GitHub
-1. قم بإنشاء حساب على [GitHub](https://github.com/) إذا لم يكن لديك واحد.
-2. اضغط على الزر الأخضر **"New"** لإنشاء مستودع جديد (Repository).
-3. قم بتسميته (مثلاً: `tiktok-ai-bot`)، واجعله **Private** (خاص) للحفاظ على كودك آمناً.
-4. ارفع الملفات الثلاثة (`bot.py`، `requirements.txt`، `font.ttf`) إلى المستودع عبر سحبها وإفلاتها في المتصفح، ثم اضغط على **Commit changes**.
+    # تقسيم النص الطويل إلى أسطر ليتناسب مع الشاشة
+    lines = textwrap.wrap(arabic_text, width=25)
+    y_text = (img.height - (len(lines) * 80)) / 2
+    
+    for line in lines:
+        reshaped = arabic_reshaper.reshape(line)
+        bidi = get_display(reshaped)
+        
+        bbox = draw.textbbox((0, 0), bidi, font=font)
+        w = bbox[2] - bbox[0]
+        draw.text(((img.width - w) / 2, y_text), bidi, font=font, fill=(255, 255, 255, 255))
+        y_text += 80
+        
+    out_bytes = BytesIO()
+    img.convert("RGB").save(out_bytes, format="JPEG")
+    out_bytes.seek(0)
+    return out_bytes
 
----
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("أهلاً بك! أرسل لي أي مقال وسأحوله إلى سلسلة صور جاهزة لتيك توك 🚀")
 
-### 3. خطوات التثبيت والتشغيل على منصة Render
-1. سجل دخولك إلى منصة [Render](https://render.com/) واربط حسابك بـ GitHub.
-2. من لوحة التحكم، اضغط على **"New +"** واختر **"Web Service"**.
-3. اختر المستودع الخاص بك (`tiktok-ai-bot`) واضغط على **Connect**.
-4. قم بإعداد الخصائص التالية في صفحة الإعدادات:
-   * **Name:** اختر أي اسم (مثلاً: `my-tiktok-bot-123`).
-   * **Language:** تأكد من اختيار **Python**.
-   * **Start Command:** اكتب الأمر: `python bot.py`
-5. انزل للأسفل إلى قسم **Environment Variables** (المتغيرات البيئية) واضغط على **Add Environment Variable** مرتين لإضافة القيم التالية:
-   * المفتاح الأول: `TELEGRAM_TOKEN` | القيمة: (ضع هنا توكن البوت الذي حصلت عليه من BotFather).
-   * المفتاح الثاني: `GEMINI_API_KEY` | القيمة: (ضع هنا مفتاح API الخاص بك من Google AI Studio).
-6. اضغط على زر **Create Web Service** في أسفل الصفحة.
+async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_text = update.message.text
+    msg = await update.message.reply_text("⏳ جاري تحليل النص وصياغته للتيك توك...")
+    
+    try:
+        response = model.generate_content(PROMPT_TEMPLATE.format(text=user_text))
+        slides = json.loads(clean_json(response.text))
+        
+        await msg.edit_text("🎨 جاري توليد الصور ورسم النصوص فوقها...")
+        
+        media_group = []
+        for slide in slides:
+            safe_prompt = quote(slide['image_prompt'])
+            img_url = f"[https://image.pollinations.ai/prompt/](https://image.pollinations.ai/prompt/){safe_prompt}?width=1080&height=1920&nologo=true"
+            img_response = requests.get(img_url)
+            
+            if img_response.status_code == 200:
+                final_image = create_image_with_text(img_response.content, slide['slide_text'])
+                media_group.append(InputMediaPhoto(final_image))
+        
+        if media_group:
+            await context.bot.send_media_group(chat_id=update.effective_chat.id, media=media_group)
+            await msg.delete()
+        else:
+            await msg.edit_text("حدث خطأ أثناء تحميل الصور من المصدر.")
+            
+    except Exception as e:
+        await msg.edit_text(f"عذراً، حدث خطأ برمجي: {str(e)}")
 
-سيقوم Render الآن بتثبيت المكتبات، وقراءة التوكن الخاص بك، وربط البوت مباشرةً بتيليجرام عبر رابط الويب (Webhook). بمجرد أن تظهر كلمة **"Live"** باللون الأخضر في منصة Render، يمكنك فتح تيليجرام وإرسال أي مقال لبوتك ليعمل بكفاءة.
+def main():
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+    
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_text))
+    
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=RENDER_URL
+    )
+
+if __name__ == "__main__":
+    main()
