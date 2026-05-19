@@ -28,9 +28,10 @@ RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bot-image-tiktok.onr
 # --- إعداد جيميناي ---
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel('gemini-1.5-flash')
 
-# تم حل مشكلة الأقواس المزدوجة {{ }} هنا لكي لا تصطدم مع بايثون
+# استخدام النموذج المدعوم بشكل كامل
+model = genai.GenerativeModel('gemini-pro')
+
 PROMPT_TEMPLATE = """
 أنت صانع محتوى محترف على تيك توك. مهمتك تحويل المقال التالي إلى شرائح قصيرة لتطبيق تيك توك.
 الشروط:
