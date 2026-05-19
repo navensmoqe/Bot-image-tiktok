@@ -30,7 +30,6 @@ if GROQ_API_KEY:
     client = Groq(api_key=GROQ_API_KEY)
 
 # --- أمر التوجيه (Prompt) ---
-# تم استخدام الأقواس المزدوجة {{ }} لكي لا تتداخل مع دالة format في بايثون
 PROMPT_TEMPLATE = """
 أنت صانع محتوى محترف على تيك توك. مهمتك تحويل المقال التالي إلى شرائح قصيرة لتطبيق تيك توك.
 الشروط:
@@ -84,7 +83,7 @@ def create_image_with_text(image_bytes, arabic_text):
     y_text = (img.height - (len(lines) * 80)) / 2
     
     for line in lines:
-        # معالجة الحروف العربية
+        # معالجة الحروف العربية لشبكها وتعديل اتجاهها
         reshaped = arabic_reshaper.reshape(line)
         bidi = get_display(reshaped)
         
@@ -104,10 +103,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    msg = await update.message.reply_text("⏳ جاري تحليل النص وصياغته باستخدام Groq...")
+    msg = await update.message.reply_text("⏳ جاري تحليل النص وصياغته بسرعة فائقة عبر Groq...")
     
     try:
-        # استدعاء Groq API
+        # استدعاء Groq API مع استخدام النموذج الحديث
         chat_completion = client.chat.completions.create(
             messages=[
                 {
@@ -115,7 +114,7 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "content": PROMPT_TEMPLATE.format(text=user_text),
                 }
             ],
-            model="llama3-70b-8192", # استخدام أقوى نموذج من Llama3
+            model="llama-3.3-70b-versatile", # أحدث إصدار وأكثرها استقراراً
             response_format={"type": "json_object"} # إجبار النموذج على إرجاع JSON نظيف
         )
         
@@ -136,7 +135,7 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 final_image = create_image_with_text(img_response.content, slide['slide_text'])
                 media_group.append(InputMediaPhoto(final_image))
         
-        # إرسال ألبوم الصور
+        # إرسال ألبوم الصور للمستخدم
         if media_group:
             await context.bot.send_media_group(chat_id=update.effective_chat.id, media=media_group)
             await msg.delete()
@@ -157,7 +156,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_text))
     
-    # تشغيل البوت بنظام Webhook ليتوافق مع منصة Render
+    # تشغيل البوت بنظام Webhook
     logger.info(f"جاري تشغيل Webhook على الرابط: {RENDER_URL}")
     app.run_webhook(
         listen="0.0.0.0",
