@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-# --- إعداد سجلات الأخطاء (Logging) ---
+# --- إعداد سجلات الأخطاء ---
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -23,8 +23,6 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 PORT = int(os.environ.get("PORT", "8443"))
-
-# تم دمج رابط تطبيقك مباشرة لضمان عدم توقف البوت
 RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bot-image-tiktok.onrender.com")
 
 # --- إعداد جيميناي ---
@@ -32,6 +30,7 @@ if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel('gemini-1.5-flash')
 
+# تم حل مشكلة الأقواس المزدوجة {{ }} هنا لكي لا تصطدم مع بايثون
 PROMPT_TEMPLATE = """
 أنت صانع محتوى محترف على تيك توك. مهمتك تحويل المقال التالي إلى شرائح قصيرة لتطبيق تيك توك.
 الشروط:
@@ -41,10 +40,10 @@ PROMPT_TEMPLATE = """
 4. وصف بصري بالإنجليزي لكل شريحة يضاف له (vertical, aesthetic background, no text).
 5. أخرج النتيجة حصرياً بصيغة JSON كالتالي دون أي نصوص أخرى:
 [
-  {
+  {{
     "slide_text": "النص العربي",
     "image_prompt": "English description"
-  }
+  }}
 ]
 المقال:
 {text}
@@ -63,19 +62,15 @@ def clean_json(text):
 def create_image_with_text(image_bytes, arabic_text):
     img = Image.open(BytesIO(image_bytes)).convert("RGBA")
     
-    # طبقة تظليل سوداء شفافة لتوضيح النص
     overlay = Image.new('RGBA', img.size, (0, 0, 0, 140))
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
     
-    # تحميل الخط العربي
     try:
         font = ImageFont.truetype("font.ttf", 60)
     except IOError:
-        logger.warning("ملف الخط font.ttf غير موجود، سيتم استخدام الخط الافتراضي.")
         font = ImageFont.load_default()
 
-    # تقسيم النص الطويل إلى أسطر
     lines = textwrap.wrap(arabic_text, width=25)
     y_text = (img.height - (len(lines) * 80)) / 2
     
@@ -124,20 +119,18 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
     except Exception as e:
         logger.error(f"Error processing text: {e}")
-        await msg.edit_text("عذراً، لا يمكنني معالجة هذا النص حالياً. يرجى المحاولة بنص آخر.")
+        await msg.edit_text("عذراً، حدث خطأ أثناء المعالجة. يرجى المحاولة بنص آخر.")
 
 def main():
     if not TELEGRAM_TOKEN:
-        logger.error("خطأ حرج: TELEGRAM_TOKEN غير موجود في المتغيرات البيئية!")
+        logger.error("خطأ حرج: TELEGRAM_TOKEN مفقود!")
         return
         
-    logger.info("جاري تهيئة البوت...")
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_text))
     
-    logger.info(f"بدء تشغيل Webhook على الرابط: {RENDER_URL}")
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
