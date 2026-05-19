@@ -3,6 +3,7 @@ import json
 import requests
 import textwrap
 import logging
+import urllib.request
 from io import BytesIO
 from urllib.parse import quote
 from telegram import Update, InputMediaPhoto
@@ -24,6 +25,17 @@ TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 PORT = int(os.environ.get("PORT", "8443"))
 RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bot-image-tiktok.onrender.com")
+
+# --- تحميل الخط العربي تلقائياً (الحل السحري) ---
+FONT_PATH = "cairo_arabic.ttf"
+if not os.path.exists(FONT_PATH):
+    logger.info("جاري تحميل خط Cairo العربي...")
+    try:
+        font_url = "https://github.com/google/fonts/raw/main/ofl/cairo/Cairo-Bold.ttf"
+        urllib.request.urlretrieve(font_url, FONT_PATH)
+        logger.info("تم تحميل الخط بنجاح.")
+    except Exception as e:
+        logger.error(f"فشل تحميل الخط: {e}")
 
 # --- إعداد عميل Groq ---
 if GROQ_API_KEY:
@@ -63,19 +75,23 @@ def clean_json(text):
 def create_image_with_text(image_bytes, arabic_text):
     img = Image.open(BytesIO(image_bytes)).convert("RGBA")
     
+    # تظليل الصورة لبروز النص
     overlay = Image.new('RGBA', img.size, (0, 0, 0, 140))
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
     
+    # استخدام الخط العربي الذي تم تحميله
     try:
-        font = ImageFont.truetype("font.ttf", 60)
+        font = ImageFont.truetype(FONT_PATH, 60)
     except IOError:
         font = ImageFont.load_default()
 
+    # تقسيم وتوسيط النص
     lines = textwrap.wrap(arabic_text, width=25)
     y_text = (img.height - (len(lines) * 80)) / 2
     
     for line in lines:
+        # معالجة وتقويم الحروف العربية
         reshaped = arabic_reshaper.reshape(line)
         bidi = get_display(reshaped)
         
@@ -94,7 +110,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    msg = await update.message.reply_text("⏳ جاري تحليل النص وصياغته بسرعة فائقة عبر Groq...")
+    msg = await update.message.reply_text("⏳ جاري تحليل النص عبر Groq...")
     
     try:
         chat_completion = client.chat.completions.create(
@@ -118,10 +134,8 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for slide in slides:
             safe_prompt = quote(slide['image_prompt'])
             
-            # --- التعديل السحري لمنع أخطاء النسخ واللصق للرابط ---
             base_domain = "https://" + "image.pollinations.ai"
             img_url = f"{base_domain}/prompt/{safe_prompt}?width=1080&height=1920&nologo=true"
-            # ---------------------------------------------------
             
             img_response = requests.get(img_url)
             
@@ -141,7 +155,7 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     if not TELEGRAM_TOKEN or not GROQ_API_KEY:
-        logger.error("خطأ حرج: تأكد من إضافة TELEGRAM_TOKEN و GROQ_API_KEY في منصة Render!")
+        logger.error("خطأ حرج: تأكد من إضافة TELEGRAM_TOKEN و GROQ_API_KEY!")
         return
         
     app = Application.builder().token(TELEGRAM_TOKEN).build()
