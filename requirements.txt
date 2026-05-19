@@ -1,5 +1,5 @@
 python-telegram-bot[webhooks]==20.7
-google-generativeai==0.3.2
+groq==0.8.0
 requests==2.31.0
 Pillow==10.2.0
 arabic-reshaper==3.0.0
