@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-# --- إعداد سجلات الأخطاء (Logging) ---
+# --- إعداد سجلات الأخطاء ---
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -29,7 +29,6 @@ RENDER_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://bot-image-tiktok.onr
 if GROQ_API_KEY:
     client = Groq(api_key=GROQ_API_KEY)
 
-# --- أمر التوجيه (Prompt) ---
 PROMPT_TEMPLATE = """
 أنت صانع محتوى محترف على تيك توك. مهمتك تحويل المقال التالي إلى شرائح قصيرة لتطبيق تيك توك.
 الشروط:
@@ -52,7 +51,6 @@ PROMPT_TEMPLATE = """
 """
 
 def clean_json(text):
-    """تنظيف النص من علامات الماركداون إذا قام الذكاء الاصطناعي بإضافتها"""
     text = text.strip()
     if text.startswith("```json"): 
         text = text[7:]
@@ -63,31 +61,24 @@ def clean_json(text):
     return text.strip()
 
 def create_image_with_text(image_bytes, arabic_text):
-    """دمج النص العربي مع الصورة"""
     img = Image.open(BytesIO(image_bytes)).convert("RGBA")
     
-    # طبقة تظليل سوداء شفافة لتوضيح النص
     overlay = Image.new('RGBA', img.size, (0, 0, 0, 140))
     img = Image.alpha_composite(img, overlay)
     draw = ImageDraw.Draw(img)
     
-    # تحميل الخط العربي
     try:
         font = ImageFont.truetype("font.ttf", 60)
     except IOError:
-        logger.warning("ملف الخط font.ttf غير موجود، سيتم استخدام الخط الافتراضي.")
         font = ImageFont.load_default()
 
-    # تقسيم النص الطويل إلى أسطر
     lines = textwrap.wrap(arabic_text, width=25)
     y_text = (img.height - (len(lines) * 80)) / 2
     
     for line in lines:
-        # معالجة الحروف العربية لشبكها وتعديل اتجاهها
         reshaped = arabic_reshaper.reshape(line)
         bidi = get_display(reshaped)
         
-        # التوسيط
         bbox = draw.textbbox((0, 0), bidi, font=font)
         w = bbox[2] - bbox[0]
         draw.text(((img.width - w) / 2, y_text), bidi, font=font, fill=(255, 255, 255, 255))
@@ -106,7 +97,6 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text("⏳ جاري تحليل النص وصياغته بسرعة فائقة عبر Groq...")
     
     try:
-        # استدعاء Groq API مع استخدام النموذج الحديث
         chat_completion = client.chat.completions.create(
             messages=[
                 {
@@ -114,8 +104,8 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "content": PROMPT_TEMPLATE.format(text=user_text),
                 }
             ],
-            model="llama-3.3-70b-versatile", # أحدث إصدار وأكثرها استقراراً
-            response_format={"type": "json_object"} # إجبار النموذج على إرجاع JSON نظيف
+            model="llama-3.3-70b-versatile",
+            response_format={"type": "json_object"}
         )
         
         response_text = chat_completion.choices[0].message.content
@@ -126,16 +116,19 @@ async def process_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         media_group = []
         for slide in slides:
-            # طلب الصورة من Pollinations
             safe_prompt = quote(slide['image_prompt'])
-            img_url = f"[https://image.pollinations.ai/prompt/](https://image.pollinations.ai/prompt/){safe_prompt}?width=1080&height=1920&nologo=true"
+            
+            # --- التعديل السحري لمنع أخطاء النسخ واللصق للرابط ---
+            base_domain = "https://" + "image.pollinations.ai"
+            img_url = f"{base_domain}/prompt/{safe_prompt}?width=1080&height=1920&nologo=true"
+            # ---------------------------------------------------
+            
             img_response = requests.get(img_url)
             
             if img_response.status_code == 200:
                 final_image = create_image_with_text(img_response.content, slide['slide_text'])
                 media_group.append(InputMediaPhoto(final_image))
         
-        # إرسال ألبوم الصور للمستخدم
         if media_group:
             await context.bot.send_media_group(chat_id=update.effective_chat.id, media=media_group)
             await msg.delete()
@@ -156,8 +149,6 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, process_text))
     
-    # تشغيل البوت بنظام Webhook
-    logger.info(f"جاري تشغيل Webhook على الرابط: {RENDER_URL}")
     app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
